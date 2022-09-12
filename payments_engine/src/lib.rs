@@ -17,7 +17,18 @@ impl PaymentsEngine {
 					.entry(id)
 					.and_modify(|account| account.available += amount) 
 					.or_insert(Account::new_with_deposit(id, amount));
-            }
+            },
+			Transaction::Withdraw(amount) => {
+				self.account_list
+					.entry(id)
+					.and_modify(|account| {
+						if amount > account.available {
+							eprintln!("Withdraw amount is bigger than available amount...");
+						} else {
+							account.available -= amount
+						}
+					}); 
+			}
         }
     }
 
@@ -48,28 +59,16 @@ impl Account {
 
 enum Transaction {
     Deposit(Decimal),
+	Withdraw(Decimal),
 }
 
+/********** TESTS **********/
 #[cfg(test)]
 mod tests {
     use super::*;
 	
-	#[test]
-	fn account_constructor() {
-		let id = AccountId(1);
-		let amount = Decimal::ONE_HUNDRED; 
-		assert_eq!(
-			Account::new_with_deposit(id, amount),
-			Account {
-				id: AccountId(1),
-				available: Decimal::ONE_HUNDRED,
-				held: Decimal::ZERO,
-				locked: false,	
-			}
-		);
-	}
     #[test]
-    fn deposit_to_non_existant_client_id() {
+    fn deposit_to_non_existing_client_id() {
         let mut payments_engine = PaymentsEngine {
 			account_list: HashMap::new(),
 		};
@@ -78,13 +77,73 @@ mod tests {
         assert_eq!(account.available, Decimal::new(100, 0));
     }
 	 
-
-    /*
     #[test]
-    fn deposit_to_client_id() {
-        let mut clients_map = HashMap::new();
-        clients_map.insert(1, Client { id: 1, available: Decimal::ZERO, held: Decimal::ZERO, locked: false });
-        clients_map.send_tx();
-        let client = clients_map.map.get(&id).expect("error");
-*/
+    fn deposit_to_existing_client_id() {
+		let mut payments_engine = PaymentsEngine {
+			account_list: HashMap::new(),
+		};
+		let account = Account {
+			id: AccountId(1),
+			available: Decimal::ZERO,
+			held: Decimal::ZERO,
+			locked: false,
+		};
+		payments_engine.account_list.insert(AccountId(1), account);
+		payments_engine.send_tx(AccountId(1), Transaction::Deposit(Decimal::ONE_HUNDRED));
+		let account = payments_engine.account_list.get(&AccountId(1)).expect("id doesn't exist...");
+		let amount = account.available;	
+		assert_eq!(amount, Decimal::ONE_HUNDRED);
+	}
+
+	#[test]
+	fn withdraw_from_client_id() {
+		let mut payments_engine = PaymentsEngine {
+			account_list: HashMap::new(),
+		};
+		let account = Account {
+			id: AccountId(1),
+			available: Decimal::ONE_HUNDRED,
+			held: Decimal::ZERO,
+			locked: false,
+		};
+		payments_engine.account_list.insert(AccountId(1), account);
+		payments_engine.send_tx(AccountId(1), Transaction::Withdraw(Decimal::ONE_HUNDRED));
+		let account = payments_engine.account_list.get(&AccountId(1)).expect("id doesn't exist...");
+		let amount = account.available;	
+		assert_eq!(amount, Decimal::ZERO);
+	}
+
+	#[test]
+	fn withdraw_insufficient_amount_from_client_id() {
+		let mut payments_engine = PaymentsEngine {
+			account_list: HashMap::new(),
+		};
+		let account = Account {
+			id: AccountId(1),
+			available: Decimal::ONE,
+			held: Decimal::ZERO,
+			locked: false,
+		};
+		payments_engine.account_list.insert(AccountId(1), account);
+		payments_engine.send_tx(AccountId(1), Transaction::Withdraw(Decimal::ONE_HUNDRED));
+		let account = payments_engine.account_list.get(&AccountId(1)).expect("id doesn't exist...");
+		let amount = account.available;	
+		assert_eq!(amount, Decimal::ONE);
+	}
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
