@@ -3,132 +3,249 @@
 use std::collections::HashMap;
 use rust_decimal::Decimal;
 
+
 #[derive(Debug)]
 struct PaymentsEngine {
-    account_list: HashMap<AccountId, Account>
+    client_list: HashMap<ClientId, Client>,
 }
 
 impl PaymentsEngine {
 
-    fn send_tx(&mut self, id: AccountId, tx: Transaction) {
-        match tx {
-            Transaction::Deposit(amount) => {
-				self.account_list
-					.entry(id)
-					.and_modify(|account| account.available += amount) 
-					.or_insert(Account::new_with_deposit(id, amount));
+    fn recv_tx(&mut self, transaction: Transaction) {
+        
+		match transaction.type_of_transaction {
+            TransactionType::Deposit=> {
+				self.client_list
+					.entry(transaction.client_id)
+					.and_modify(|client| {
+						client.available += transaction.amount;
+						client.transaction_list.insert(transaction.transaction_id, transaction);
+					}) 
+					.or_insert(Client::new_with_deposit(transaction));
             },
-			Transaction::Withdraw(amount) => {
-				self.account_list
-					.entry(id)
-					.and_modify(|account| {
-						if amount > account.available {
+			
+			TransactionType::Withdraw=> {
+				self.client_list
+					.entry(transaction.client_id)
+					.and_modify(|client| {
+						if transaction.amount > client.available {
+							client.transaction_list.insert(transaction.transaction_id, transaction);
 							eprintln!("Withdraw amount is bigger than available amount...");
 						} else {
-							account.available -= amount
+							client.available -= transaction.amount;
+							client.transaction_list.insert(transaction.transaction_id, transaction);
 						}
 					}); 
 			}
         }
     }
-
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
-struct AccountId(u16);
+struct ClientId(u16);
 
 
 #[derive(Debug, PartialEq)]
-struct Account {
-    id: AccountId,
+struct Client {
+    client_id: ClientId,
     available: Decimal,
     held: Decimal,
     locked: bool,
+	transaction_list: HashMap<TransactionId, Transaction>,
 }
 
-impl Account {
-	fn new_with_deposit(id: AccountId, amount: Decimal) -> Account {
-		Account {
-			id,
-			available: amount,
+impl Client {
+	fn new_with_deposit(deposit: Transaction) -> Client {
+		let mut transaction_list = HashMap::new();
+		transaction_list.insert(deposit.transaction_id, deposit);
+		Client {
+			client_id: deposit.client_id,
+			available: deposit.amount,
 			held: Decimal::ZERO,
 			locked: false,
+			transaction_list, 
 		}
 	}
 }
 
-enum Transaction {
-    Deposit(Decimal),
-	Withdraw(Decimal),
+#[derive(Debug, PartialEq, Copy, Clone)]
+struct Transaction {
+	transaction_id: TransactionId,
+	client_id: ClientId,
+	type_of_transaction: TransactionType, 	
+	amount: Decimal,
 }
 
-/********** TESTS **********/
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
+struct TransactionId(u32);
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum TransactionType {
+	Deposit,
+	Withdraw,
+//	Dispute,
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
 	
     #[test]
     fn deposit_to_non_existing_client_id() {
-        let mut payments_engine = PaymentsEngine {
-			account_list: HashMap::new(),
+        
+		let mut payments_engine = PaymentsEngine {
+			client_list: HashMap::new(),
 		};
-        payments_engine.send_tx(AccountId(1), Transaction::Deposit(Decimal::ONE_HUNDRED));
-        let account = payments_engine.account_list.get(&AccountId(1)).expect("id doesn't exist...");
-        assert_eq!(account.available, Decimal::new(100, 0));
+		
+		let deposit = Transaction {
+			transaction_id: TransactionId(1),
+			client_id: ClientId(1),
+			type_of_transaction: TransactionType::Deposit,
+			amount: Decimal::ONE_HUNDRED,
+		};
+        
+		payments_engine.recv_tx(deposit);
+		
+		let client = payments_engine.client_list.get(&ClientId(1)).expect("client id doesn't exist...");  
+		
+		let mut client_mock = Client {
+			client_id: ClientId(1),
+  			available: Decimal::ONE_HUNDRED,
+  		    held: Decimal::ZERO,
+  		    locked: false,
+			transaction_list: HashMap::new(),		
+		};
+		
+		client_mock.transaction_list.insert(deposit.transaction_id, deposit);
+		
+		assert_eq!(client, &client_mock);
     }
-	 
+	
     #[test]
     fn deposit_to_existing_client_id() {
+		
 		let mut payments_engine = PaymentsEngine {
-			account_list: HashMap::new(),
+			client_list: HashMap::new(),
 		};
-		let account = Account {
-			id: AccountId(1),
+
+		let first_deposit = Transaction {
+			transaction_id: TransactionId(1),
+			client_id: ClientId(1),
+			type_of_transaction: TransactionType::Deposit,
+			amount: Decimal::ONE,
+		};
+
+		payments_engine.recv_tx(first_deposit);
+		
+		let second_deposit = Transaction {
+			transaction_id: TransactionId(2),
+			client_id: ClientId(1),
+			type_of_transaction: TransactionType::Deposit,
+			amount: Decimal::ONE,
+		};
+			
+		payments_engine.recv_tx(second_deposit);
+		
+		let client_after_second_deposit = payments_engine.client_list.get(&ClientId(1)).expect("client id doesn't exist");
+		
+		let mut transaction_list_mock = HashMap::new();
+		transaction_list_mock.insert(first_deposit.transaction_id, first_deposit);
+		transaction_list_mock.insert(second_deposit.transaction_id, second_deposit);
+		
+		let client_after_second_deposit_mock = Client {
+			client_id: ClientId(1),
+			available: Decimal::TWO,
+			held: Decimal::ZERO,
+			locked: false,
+			transaction_list: transaction_list_mock,
+		};
+
+		assert_eq!(client_after_second_deposit, &client_after_second_deposit_mock);
+	}
+	
+	#[test]
+	fn withdraw_from_client_id() {
+		
+		let mut payments_engine = PaymentsEngine {
+			client_list: HashMap::new(),
+		};
+		
+		let deposit = Transaction {
+			transaction_id: TransactionId(1),
+			client_id: ClientId(1),
+			type_of_transaction: TransactionType::Deposit,
+			amount: Decimal::ONE_HUNDRED,
+		};
+		
+		payments_engine.recv_tx(deposit);
+		
+		let withdraw = Transaction {
+			transaction_id: TransactionId(2),
+			client_id: ClientId(1),
+			type_of_transaction: TransactionType::Withdraw,
+			amount: Decimal::ONE_HUNDRED,
+		};
+		
+		payments_engine.recv_tx(withdraw);
+		
+		let client_after_withdraw = payments_engine.client_list.get(&ClientId(1)).expect("client id doesn't exist...");
+		
+		let mut transaction_list_mock = HashMap::new();
+		transaction_list_mock.insert(deposit.transaction_id, deposit);
+		transaction_list_mock.insert(withdraw.transaction_id, withdraw);
+		
+		let client_after_withdraw_mock = Client {
+			client_id: ClientId(1),
 			available: Decimal::ZERO,
 			held: Decimal::ZERO,
 			locked: false,
+			transaction_list: transaction_list_mock,
 		};
-		payments_engine.account_list.insert(AccountId(1), account);
-		payments_engine.send_tx(AccountId(1), Transaction::Deposit(Decimal::ONE_HUNDRED));
-		let account = payments_engine.account_list.get(&AccountId(1)).expect("id doesn't exist...");
-		let amount = account.available;	
-		assert_eq!(amount, Decimal::ONE_HUNDRED);
+		
+		assert_eq!(client_after_withdraw, &client_after_withdraw_mock);
 	}
-
-	#[test]
-	fn withdraw_from_client_id() {
-		let mut payments_engine = PaymentsEngine {
-			account_list: HashMap::new(),
-		};
-		let account = Account {
-			id: AccountId(1),
-			available: Decimal::ONE_HUNDRED,
-			held: Decimal::ZERO,
-			locked: false,
-		};
-		payments_engine.account_list.insert(AccountId(1), account);
-		payments_engine.send_tx(AccountId(1), Transaction::Withdraw(Decimal::ONE_HUNDRED));
-		let account = payments_engine.account_list.get(&AccountId(1)).expect("id doesn't exist...");
-		let amount = account.available;	
-		assert_eq!(amount, Decimal::ZERO);
-	}
-
+	
 	#[test]
 	fn withdraw_insufficient_amount_from_client_id() {
+		
 		let mut payments_engine = PaymentsEngine {
-			account_list: HashMap::new(),
+			client_list: HashMap::new(),
 		};
-		let account = Account {
-			id: AccountId(1),
+		
+		let deposit = Transaction {
+			transaction_id: TransactionId(1),
+			client_id: ClientId(1),
+			type_of_transaction: TransactionType::Deposit,
+			amount: Decimal::ONE,
+		};
+		
+		payments_engine.recv_tx(deposit);
+		
+		let withdraw = Transaction {
+			transaction_id: TransactionId(2),
+			client_id: ClientId(1),
+			type_of_transaction: TransactionType::Withdraw,
+			amount: Decimal::ONE_HUNDRED,
+		};
+		
+		payments_engine.recv_tx(withdraw);
+		
+		let client_after_failed_withdraw = payments_engine.client_list.get(&ClientId(1)).expect("client id doesn't exist...");
+		
+		let mut transaction_list_mock = HashMap::new();
+		transaction_list_mock.insert(deposit.transaction_id, deposit);
+		transaction_list_mock.insert(withdraw.transaction_id, withdraw);
+		
+		let client_after_failed_withdraw_mock = Client {
+			client_id: ClientId(1),
 			available: Decimal::ONE,
 			held: Decimal::ZERO,
 			locked: false,
+			transaction_list: transaction_list_mock,
 		};
-		payments_engine.account_list.insert(AccountId(1), account);
-		payments_engine.send_tx(AccountId(1), Transaction::Withdraw(Decimal::ONE_HUNDRED));
-		let account = payments_engine.account_list.get(&AccountId(1)).expect("id doesn't exist...");
-		let amount = account.available;	
-		assert_eq!(amount, Decimal::ONE);
+		
+		assert_eq!(client_after_failed_withdraw, &client_after_failed_withdraw_mock);
 	}
 
 }
