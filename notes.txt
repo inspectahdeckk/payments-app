@@ -1,0 +1,3 @@
+- add a transaction to a transaction list before of after a transaction is processed?
+- you can only dispute a deposit transaction?
+- should total client amount ever go to minus?
