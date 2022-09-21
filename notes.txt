@@ -1,3 +1,4 @@
-- add a transaction to a transaction list before of after a transaction is processed?
-- you can only dispute a deposit transaction?
-- should total client amount ever go to minus?
+- min and max deposit/withdraw values?
+- how to deal with loss due to rounding numbers?
+- 
+
