@@ -39,18 +39,19 @@ impl PaymentsEngine {
 
             Transaction::Withdraw(withdraw) => {
                 let amount = Amount::check_and_round_withdraw(withdraw.amount)?;
-				let client = self.client_list.get_mut(&withdraw.client_id).expect("client id doesn't exist");
-				if client.available < amount {
-					return Err(Error::WithdrawMoreThanAvailable)
-				}
-        		client.available = client.available.checked_subtract(amount);
+                let client = self
+                    .client_list
+                    .get_mut(&withdraw.client_id)
+                    .expect("client id doesn't exist");
+                if client.available < amount {
+                    return Err(Error::WithdrawMoreThanAvailable);
+                }
+                client.available = client.available.checked_subtract(amount);
                 client
-					.transaction_list
+                    .transaction_list
                     .insert(withdraw.transaction_id, Transaction::Withdraw(withdraw));
-				Ok(())
-            }
-             
-/*
+                Ok(())
+            } /*
                           TransactionType::Dispute(tx) => {
                               self.client_list
                                   .entry(transaction.client_id)
@@ -131,8 +132,8 @@ enum Error {
     WithdrawLessThanMin,
     #[error("withdraw amount is bigger than maximum")]
     WithdrawMoreThanMax,
-	#[error("withdraw amount is lower than available amount")]
-	WithdrawMoreThanAvailable
+    #[error("withdraw amount is lower than available amount")]
+    WithdrawMoreThanAvailable,
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
@@ -151,7 +152,10 @@ impl Client {
     fn new_with_deposit(deposit: Deposit) -> Client {
         let mut transaction_list = HashMap::new();
         transaction_list.insert(deposit.transaction_id, Transaction::Deposit(deposit));
-		let amount = deposit.amount.0.round_dp_with_strategy(DECIMAL_POINTS, ROUNDING_STRATEGY);	
+        let amount = deposit
+            .amount
+            .0
+            .round_dp_with_strategy(DECIMAL_POINTS, ROUNDING_STRATEGY);
         Client {
             client_id: deposit.client_id,
             available: Amount(amount),
@@ -170,11 +174,11 @@ impl Amount {
         let checked_add_decimal = self.0.checked_add(rhs.0).expect("overflow");
         Amount(checked_add_decimal)
     }
-	
-	fn checked_subtract(self, rhs: Amount) -> Amount {
-		let checked_subtract_decimal = self.0.checked_sub(rhs.0).expect("overflow");
-		Amount(checked_subtract_decimal)
-	}
+
+    fn checked_subtract(self, rhs: Amount) -> Amount {
+        let checked_subtract_decimal = self.0.checked_sub(rhs.0).expect("overflow");
+        Amount(checked_subtract_decimal)
+    }
 
     fn check_and_round_deposit(amount: Amount) -> Result<Amount, Error> {
         if amount.0 < MIN_DEPOSIT {
@@ -254,7 +258,7 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-	#[test_case(Amount(Decimal::ONE_HUNDRED); "deposit amount is one hundred")]
+    #[test_case(Amount(Decimal::ONE_HUNDRED); "deposit amount is one hundred")]
     #[test_case(Amount(MIN_DEPOSIT); "minimum deposit amount")]
     #[test_case(Amount(MAX_DEPOSIT); "maximum deposit amount")]
     //#[test_case(Amount(Decimal::NEGATIVE_ONE); "amount is less than deposit minimum")] TODO
@@ -309,7 +313,9 @@ mod tests {
             disputed: false,
         };
 
-        payments_engine.recv_tx(Transaction::Deposit(first_deposit)).expect("deposit amount error");
+        payments_engine
+            .recv_tx(Transaction::Deposit(first_deposit))
+            .expect("deposit amount error");
 
         let second_deposit = Deposit {
             transaction_id: TransactionId(2),
@@ -318,7 +324,9 @@ mod tests {
             disputed: false,
         };
 
-        payments_engine.recv_tx(Transaction::Deposit(second_deposit)).expect("deposit amount error");
+        payments_engine
+            .recv_tx(Transaction::Deposit(second_deposit))
+            .expect("deposit amount error");
 
         let client_after_second_deposit = payments_engine
             .client_list
@@ -326,13 +334,13 @@ mod tests {
             .expect("client id doesn't exist");
 
         let mut fake_transaction_list = HashMap::new();
-        
-		fake_transaction_list.insert(
+
+        fake_transaction_list.insert(
             first_deposit.transaction_id,
             Transaction::Deposit(first_deposit),
         );
-        
-		fake_transaction_list.insert(
+
+        fake_transaction_list.insert(
             second_deposit.transaction_id,
             Transaction::Deposit(second_deposit),
         );
@@ -350,100 +358,108 @@ mod tests {
             &fake_client_after_second_deposit
         );
     }
-		//TODO more test cases
-        #[test_case(Amount(Decimal::ONE_HUNDRED), Amount(Decimal::ONE_HUNDRED); "normal withdraw")]
-        fn withdraw_from_client_id(deposit_amount: Amount, withdraw_amount: Amount) {
-            let mut payments_engine = PaymentsEngine {
-                client_list: HashMap::new(),
-            };
+    //TODO more test cases
+    #[test_case(Amount(Decimal::ONE_HUNDRED), Amount(Decimal::ONE_HUNDRED); "normal withdraw")]
+    fn withdraw_from_client_id(deposit_amount: Amount, withdraw_amount: Amount) {
+        let mut payments_engine = PaymentsEngine {
+            client_list: HashMap::new(),
+        };
 
-			let deposit = Deposit {
-            	transaction_id: TransactionId(1),
-            	client_id: ClientId(1),
-            	amount: deposit_amount,
-            	disputed: false,
-        	};
+        let deposit = Deposit {
+            transaction_id: TransactionId(1),
+            client_id: ClientId(1),
+            amount: deposit_amount,
+            disputed: false,
+        };
 
-            payments_engine.recv_tx(Transaction::Deposit(deposit)).expect("deposit amount error");
+        payments_engine
+            .recv_tx(Transaction::Deposit(deposit))
+            .expect("deposit amount error");
 
-            let withdraw = Withdraw {
-                transaction_id: TransactionId(2),
-                client_id: ClientId(1),
-                amount: withdraw_amount,
-				disputed: false,
-            };
+        let withdraw = Withdraw {
+            transaction_id: TransactionId(2),
+            client_id: ClientId(1),
+            amount: withdraw_amount,
+            disputed: false,
+        };
 
-            payments_engine.recv_tx(Transaction::Withdraw(withdraw)).expect("withdraw amount error");
+        payments_engine
+            .recv_tx(Transaction::Withdraw(withdraw))
+            .expect("withdraw amount error");
 
-            let client_after_withdraw = payments_engine
-                .client_list
-                .get(&ClientId(1))
-                .expect("client id doesn't exist...");
+        let client_after_withdraw = payments_engine
+            .client_list
+            .get(&ClientId(1))
+            .expect("client id doesn't exist...");
 
-            let mut fake_transaction_list = HashMap::new();
-            fake_transaction_list.insert(deposit.transaction_id, Transaction::Deposit(deposit));
-            fake_transaction_list.insert(withdraw.transaction_id, Transaction::Withdraw(withdraw));
+        let mut fake_transaction_list = HashMap::new();
+        fake_transaction_list.insert(deposit.transaction_id, Transaction::Deposit(deposit));
+        fake_transaction_list.insert(withdraw.transaction_id, Transaction::Withdraw(withdraw));
 
-            let fake_client_after_withdraw = Client {
-                client_id: ClientId(1),
-                available: deposit_amount.checked_subtract(withdraw_amount),
-                held: Amount(Decimal::ZERO),
-                locked: false,
-                transaction_list: fake_transaction_list,
-            };
+        let fake_client_after_withdraw = Client {
+            client_id: ClientId(1),
+            available: deposit_amount.checked_subtract(withdraw_amount),
+            held: Amount(Decimal::ZERO),
+            locked: false,
+            transaction_list: fake_transaction_list,
+        };
 
-            assert_eq!(client_after_withdraw, &fake_client_after_withdraw);
-        }
+        assert_eq!(client_after_withdraw, &fake_client_after_withdraw);
+    }
 
-        #[test]
-		#[should_panic]
-        fn withdraw_insufficient_amount_from_client_id() {
-            let mut payments_engine = PaymentsEngine {
-                client_list: HashMap::new(),
-            };
+    #[test]
+    #[should_panic]
+    fn withdraw_insufficient_amount_from_client_id() {
+        let mut payments_engine = PaymentsEngine {
+            client_list: HashMap::new(),
+        };
 
-            let deposit = Deposit {
-                transaction_id: TransactionId(1),
-                client_id: ClientId(1),
-                amount: Amount(Decimal::ONE),
-				disputed: false,
-            };
+        let deposit = Deposit {
+            transaction_id: TransactionId(1),
+            client_id: ClientId(1),
+            amount: Amount(Decimal::ONE),
+            disputed: false,
+        };
 
-            payments_engine.recv_tx(Transaction::Deposit(deposit)).expect("deposit amount error");
+        payments_engine
+            .recv_tx(Transaction::Deposit(deposit))
+            .expect("deposit amount error");
 
-            let withdraw = Withdraw {
-                transaction_id: TransactionId(2),
-                client_id: ClientId(1),
-                amount: Amount(Decimal::ONE_HUNDRED),
-				disputed: false,
-            };
+        let withdraw = Withdraw {
+            transaction_id: TransactionId(2),
+            client_id: ClientId(1),
+            amount: Amount(Decimal::ONE_HUNDRED),
+            disputed: false,
+        };
 
-            payments_engine.recv_tx(Transaction::Withdraw(withdraw)).expect("withdraw amount error");
+        payments_engine
+            .recv_tx(Transaction::Withdraw(withdraw))
+            .expect("withdraw amount error");
 
-            /*let client_after_failed_withdraw = payments_engine
-                .client_list
-                .get(&ClientId(1))
-                .expect("client id doesn't exist...");
+        /*let client_after_failed_withdraw = payments_engine
+                    .client_list
+                    .get(&ClientId(1))
+                    .expect("client id doesn't exist...");
 
-            let mut transaction_list_mock = HashMap::new();
-            transaction_list_mock.insert(deposit.transaction_id, deposit);
+                let mut transaction_list_mock = HashMap::new();
+                transaction_list_mock.insert(deposit.transaction_id, deposit);
 
-            let client_after_failed_withdraw_mock = Client {
-                client_id: ClientId(1),
-                available: Decimal::ONE,
-                held: Decimal::ZERO,
-                locked: false,
-                transaction_list: transaction_list_mock,
-                disputed: false,
-            };
+                let client_after_failed_withdraw_mock = Client {
+                    client_id: ClientId(1),
+                    available: Decimal::ONE,
+                    held: Decimal::ZERO,
+                    locked: false,
+                    transaction_list: transaction_list_mock,
+                    disputed: false,
+                };
 
-            assert_eq!(
-                client_after_failed_withdraw,
-                &client_after_failed_withdraw_mock
-            );
-	*/
-        }
-/*
+                assert_eq!(
+                    client_after_failed_withdraw,
+                    &client_after_failed_withdraw_mock
+                );
+        */
+    }
+    /*
         #[test]
         fn dispute_a_deposit() {
             let mut payments_engine = PaymentsEngine {
