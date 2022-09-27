@@ -63,7 +63,7 @@ impl PaymentsEngine {
                 match target_transaction {
                     Some(&Transaction::Deposit(mut target)) => {
                         if target.dispute_status == DisputeStatus::NotDisputed {
-							let amount = target.amount;
+                            let amount = target.amount;
                             client.available = client.available.checked_subtract(amount);
                             client.held = client.held.checked_add(amount);
                             target.dispute_status = DisputeStatus::Disputed;
@@ -71,7 +71,7 @@ impl PaymentsEngine {
                         } else {
                             Err(Error::DepositTwiceDisputed)
                         }
-                    },
+                    }
                     Some(&Transaction::Withdraw(_target)) => Err(Error::WithdrawDispute),
                     Some(&Transaction::Dispute(_target)) => Err(Error::WithdrawDispute),
                     None => Err(Error::NonExistingTransaction),
