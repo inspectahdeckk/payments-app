@@ -58,10 +58,11 @@ impl PaymentsEngine {
                     .client_list
                     .get_mut(&dispute.client_id)
                     .expect("client id doesn't exist");
-                let target_transaction =
-                    client.transaction_list.get(&dispute.target_transaction_id);
+                let target_transaction = client
+                    .transaction_list
+                    .get_mut(&dispute.target_transaction_id);
                 match target_transaction {
-                    Some(&Transaction::Deposit(mut target)) => {
+                    Some(Transaction::Deposit(target)) => {
                         if target.dispute_status == DisputeStatus::NotDisputed {
                             let amount = target.amount;
                             client.available = client.available.checked_subtract(amount);
@@ -72,33 +73,39 @@ impl PaymentsEngine {
                             Err(Error::DepositTwiceDisputed)
                         }
                     }
-                    Some(&Transaction::Withdraw(_target)) => Err(Error::WithdrawDispute),
-                    Some(&Transaction::Dispute(_target)) => Err(Error::WithdrawDispute),
+                    Some(Transaction::Withdraw(_target)) => Err(Error::WithdrawDispute),
+                    Some(Transaction::Dispute(_target)) => Err(Error::WithdrawDispute), // TODO
+                    Some(Transaction::Resolve(_target)) => Err(Error::WithdrawDispute), // TODO
+                    None => Err(Error::NonExistingTransaction),
+                }
+            }
+	
+            Transaction::Resolve(resolve) => {
+				let client = self
+					.client_list
+					.get_mut(&resolve.client_id)
+					.expect("client id doesn't exist");
+				let target_transaction = client
+					.transaction_list
+					.get_mut(&resolve.target_transaction_id);
+				match target_transaction {
+                    Some(Transaction::Deposit(target)) => {
+                        if target.dispute_status == DisputeStatus::Disputed {
+                            let amount = target.amount;
+                            client.available = client.available.checked_add(amount);
+                            client.held = client.held.checked_subtract(amount);
+                            target.dispute_status = DisputeStatus::Resolved;
+                            Ok(())
+                        } else {
+                            Err(Error::DepositTwiceDisputed)
+                        }
+                    }
+                    Some(Transaction::Withdraw(_target)) => Err(Error::WithdrawDispute),
+                    Some(Transaction::Dispute(_target)) => Err(Error::WithdrawDispute), // TODO
+                    Some(Transaction::Resolve(_target)) => Err(Error::WithdrawDispute), // TODO
                     None => Err(Error::NonExistingTransaction),
                 }
             } /*
-                          TransactionType::Resolve(tx) => {
-                              self.client_list
-                                  .entry(transaction.client_id)
-                                  .and_modify(|client| {
-                                      if !client.disputed {
-                                          eprintln!("cannot resolve a transaction that is not disputed...");
-                                      } else {
-                                          let target_transaction = client
-                                              .transaction_list
-                                              .get(&tx)
-                                              .expect("transaction id doesn't exist");
-                                          let amount = target_transaction.amount.unwrap();
-                                          client.available += amount;
-                                          client.held -= amount;
-                                          client.disputed = false;
-                                          client
-                                              .transaction_list
-                                              .insert(transaction.transaction_id, transaction);
-                                      }
-                                  });
-                          }
-
                           TransactionType::Chargeback(tx) => {
                               self.client_list
                                   .entry(transaction.client_id)
@@ -249,7 +256,7 @@ enum Transaction {
     Deposit(Deposit),
     Withdraw(Withdraw),
     Dispute(Dispute),
-    //Resolve,
+    Resolve(Resolve),
     //Chargeback,
 }
 
@@ -278,6 +285,12 @@ struct Withdraw {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Dispute {
+    client_id: ClientId,
+    target_transaction_id: TransactionId,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Resolve {
     client_id: ClientId,
     target_transaction_id: TransactionId,
 }
@@ -516,69 +529,108 @@ mod tests {
 
         assert_eq!(client, &fake_client);
     }
-    /*
-        #[test]
-        fn resolve_a_dispute() {
-            let mut payments_engine = PaymentsEngine {
-                client_list: HashMap::new(),
-            };
 
-            let deposit = Transaction {
-                transaction_id: TransactionId(1),
-                client_id: ClientId(1),
-                transaction_type: TransactionType::Deposit,
-                amount: Some(Decimal::ONE_HUNDRED),
-            };
+    #[test]
+    #[should_panic]
+    fn dispute_a_non_deposit() {
+        let mut payments_engine = PaymentsEngine {
+            client_list: HashMap::new(),
+        };
 
-            payments_engine.recv_tx(deposit);
+        let deposit = Deposit {
+            transaction_id: TransactionId(1),
+            client_id: ClientId(1),
+            amount: Amount(Decimal::ONE_HUNDRED),
+            dispute_status: DisputeStatus::NotDisputed,
+        };
 
-            let dispute = Transaction {
-                transaction_id: TransactionId(2),
-                client_id: ClientId(1),
-                transaction_type: TransactionType::Dispute(TransactionId(1)),
-                amount: None,
-            };
+        let withdraw = Withdraw {
+            transaction_id: TransactionId(2),
+            client_id: ClientId(1),
+            amount: Amount(Decimal::ONE_HUNDRED),
+        };
 
-            payments_engine.recv_tx(dispute);
+        let dispute = Dispute {
+            client_id: ClientId(1),
+            target_transaction_id: TransactionId(2),
+        };
 
-            let resolve = Transaction {
-                transaction_id: TransactionId(3),
-                client_id: ClientId(1),
-                transaction_type: TransactionType::Resolve(TransactionId(1)),
-                amount: None,
-            };
+        payments_engine
+            .recv_tx(Transaction::Deposit(deposit))
+            .expect("deposit amount error");
 
-            payments_engine.recv_tx(resolve);
+        payments_engine
+            .recv_tx(Transaction::Withdraw(withdraw))
+            .expect("withdraw amount error");
 
-            let client = payments_engine
-                .client_list
-                .get(&ClientId(1))
-                .expect("client id doesn't exist...");
+        payments_engine
+            .recv_tx(Transaction::Dispute(dispute))
+            .expect("dispute error");
+    }
+    
+     #[test]
+     fn resolve_a_dispute() {
+        let mut payments_engine = PaymentsEngine {
+            client_list: HashMap::new(),
+        };
 
-            let mut client_mock = Client {
-                client_id: ClientId(1),
-                available: Decimal::ONE_HUNDRED,
-                held: Decimal::ZERO,
-                locked: false,
-                transaction_list: HashMap::new(),
-                disputed: false,
-            };
+        let deposit = Deposit {
+            transaction_id: TransactionId(1),
+            client_id: ClientId(1),
+            amount: Amount(Decimal::ONE_HUNDRED),
+            dispute_status: DisputeStatus::NotDisputed,
+        };
 
-            client_mock
-                .transaction_list
-                .insert(deposit.transaction_id, deposit);
+        let dispute = Dispute {
+            client_id: ClientId(1),
+            target_transaction_id: TransactionId(1),
+        };
 
-            client_mock
-                .transaction_list
-                .insert(dispute.transaction_id, dispute);
+		let resolve = Resolve {
+			client_id: ClientId(1),
+			target_transaction_id: TransactionId(1),	
+		};
 
-            client_mock
-                .transaction_list
-                .insert(resolve.transaction_id, resolve);
+        payments_engine
+            .recv_tx(Transaction::Deposit(deposit))
+            .expect("deposit amount error");
+        
+		payments_engine
+            .recv_tx(Transaction::Dispute(dispute))
+            .expect("dispute error");
+		
+		payments_engine
+            .recv_tx(Transaction::Resolve(resolve))
+            .expect("resolve error");
 
-            assert_eq!(client, &client_mock);
-        }
+        let client = payments_engine
+            .client_list
+            .get(&ClientId(1))
+            .expect("client id doesn't exist...");
 
+        let mut fake_client = Client {
+            client_id: ClientId(1),
+            available: Amount(Decimal::ONE_HUNDRED),
+            held: Amount(Decimal::ZERO),
+            transaction_list: HashMap::new(),
+            locked: false,
+        };
+
+        let fake_deposit = Deposit {
+            transaction_id: TransactionId(1),
+            client_id: ClientId(1),
+            amount: Amount(Decimal::ONE_HUNDRED),
+            dispute_status: DisputeStatus::Resolved,
+        };
+
+        fake_client.transaction_list.insert(
+            fake_deposit.transaction_id,
+            Transaction::Deposit(fake_deposit),
+        );
+
+        assert_eq!(client, &fake_client);
+    }    
+/*
         #[test]
         fn chargeback_a_dispute() {
             let mut payments_engine = PaymentsEngine {
