@@ -6,6 +6,8 @@ use rust_decimal_macros::dec;
 use std::collections::HashMap;
 //use std::ops::Add;
 //use std::ops::AddAssign;
+use serde::Deserialize;
+use serde::Serialize;
 use thiserror::Error;
 
 const MIN_DEPOSIT: Decimal = dec!(0.0001);
@@ -16,12 +18,12 @@ const DECIMAL_POINTS: u32 = 4;
 const ROUNDING_STRATEGY: RoundingStrategy = RoundingStrategy::MidpointNearestEven;
 
 #[derive(Debug)]
-struct PaymentsEngine {
-    client_list: HashMap<ClientId, Client>,
+pub struct PaymentsEngine {
+    pub client_list: HashMap<ClientId, Client>,
 }
 
 impl PaymentsEngine {
-    fn recv_tx(&mut self, transaction: Transaction) -> Result<(), Error> {
+    pub fn recv_tx(&mut self, transaction: Transaction) -> Result<(), Error> {
         match transaction {
             Transaction::Deposit(deposit) => {
                 let amount = Amount::check_and_round_deposit(deposit.amount)?;
@@ -129,7 +131,7 @@ impl PaymentsEngine {
 }
 
 #[derive(Error, Debug)]
-enum Error {
+pub enum Error {
     #[error("transaction id doesn't exist")]
     NonExistingTransaction,
 
@@ -161,15 +163,15 @@ enum Error {
     ChargebackError,
 }
 
-#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
-struct ClientId(u16);
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone, Serialize, Deserialize)]
+pub struct ClientId(pub u16);
 
 #[derive(Debug, PartialEq)]
-struct Client {
-    client_id: ClientId,
-    available: Amount,
-    held: Amount,
-    locked: bool,
+pub struct Client {
+    pub client_id: ClientId,
+    pub available: Amount,
+    pub held: Amount,
+    pub locked: bool,
     transaction_list: HashMap<TransactionId, Transaction>,
 }
 
@@ -191,16 +193,16 @@ impl Client {
     }
 }
 
-#[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Copy, Clone)]
-struct Amount(Decimal);
+#[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Copy, Clone, Serialize, Deserialize)]
+pub struct Amount(pub Decimal);
 
 impl Amount {
-    fn checked_add(self, rhs: Amount) -> Amount {
+    pub fn checked_add(self, rhs: Amount) -> Amount {
         let checked_add_decimal = self.0.checked_add(rhs.0).expect("overflow");
         Amount(checked_add_decimal)
     }
 
-    fn checked_subtract(self, rhs: Amount) -> Amount {
+    pub fn checked_subtract(self, rhs: Amount) -> Amount {
         let checked_subtract_decimal = self.0.checked_sub(rhs.0).expect("overflow");
         Amount(checked_subtract_decimal)
     }
@@ -250,11 +252,11 @@ impl AddAssign for Amount {
 }
 */
 
-#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
-struct TransactionId(u32);
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone, Serialize, Deserialize)]
+pub struct TransactionId(pub u32);
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-enum Transaction {
+pub enum Transaction {
     Deposit(Deposit),
     Withdraw(Withdraw),
     Dispute(Dispute),
@@ -263,15 +265,15 @@ enum Transaction {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-struct Deposit {
-    transaction_id: TransactionId,
-    client_id: ClientId,
-    amount: Amount,
-    dispute_status: DisputeStatus,
+pub struct Deposit {
+    pub transaction_id: TransactionId,
+    pub client_id: ClientId,
+    pub amount: Amount,
+    pub dispute_status: DisputeStatus,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-enum DisputeStatus {
+#[derive(Debug, Copy, Clone, PartialEq, Serialize)]
+pub enum DisputeStatus {
     NotDisputed,
     Disputed,
     Resolved,
@@ -279,26 +281,26 @@ enum DisputeStatus {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-struct Withdraw {
+pub struct Withdraw {
     transaction_id: TransactionId,
     client_id: ClientId,
     amount: Amount,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-struct Dispute {
+pub struct Dispute {
     client_id: ClientId,
     target_transaction_id: TransactionId,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-struct Resolve {
+pub struct Resolve {
     client_id: ClientId,
     target_transaction_id: TransactionId,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-struct Chargeback {
+pub struct Chargeback {
     client_id: ClientId,
     target_transaction_id: TransactionId,
 }
