@@ -282,9 +282,9 @@ pub enum DisputeStatus {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Withdraw {
-    transaction_id: TransactionId,
-    client_id: ClientId,
-    amount: Amount,
+    pub transaction_id: TransactionId,
+    pub client_id: ClientId,
+    pub amount: Amount,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

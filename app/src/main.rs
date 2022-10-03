@@ -11,6 +11,7 @@ use payments_engine::Error;
 use payments_engine::PaymentsEngine;
 use payments_engine::Transaction;
 use payments_engine::TransactionId;
+use payments_engine::Withdraw;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -37,8 +38,6 @@ struct OutputRecord {
 }
 
 fn main() -> Result<(), Box<dyn OtherError>> {
-    let deposit_type = String::from("deposit");
-
     let mut engine = PaymentsEngine {
         client_list: HashMap::new(),
     };
@@ -54,8 +53,9 @@ fn main() -> Result<(), Box<dyn OtherError>> {
 
     for result in rdr.deserialize() {
         let record: InputRecord = result?;
-        match record.r#type {
-            deposit_type => {
+
+        match record.r#type.as_ref() {
+            "deposit" => {
                 let deposit = Deposit {
                     transaction_id: record.tx,
                     client_id: record.client,
@@ -64,31 +64,30 @@ fn main() -> Result<(), Box<dyn OtherError>> {
                 };
                 let deposit_transaction = Transaction::Deposit(deposit);
                 engine.recv_tx(deposit_transaction)?;
-
-                let client = engine
-                    .client_list
-                    .get(&deposit.client_id)
-                    .expect("client doesn't exist");
-
-                /*
-                struct Client {
-                    client_id: ClientId,
-                    available: Amount,
-                    held: Amount,
-                    locked: bool,
-                    transaction_list: HashMap<TransactionId, Transaction>,
-                }
-                */
-
-                wtr.serialize(OutputRecord {
-                    client: client.client_id,
-                    available: client.available,
-                    held: client.held,
-                    total: client.available.checked_add(client.held),
-                    locked: client.locked,
-                })?;
             }
+
+            /*"withdraw" => {
+                let withdraw = Withdraw {
+                    transaction_id: record.tx,
+                    client_id: record.client,
+                    amount: record.amount,
+                };
+                let withdraw_transaction = Transaction::Withdraw(withdraw);
+                engine.recv_tx(withdraw_transaction)?;
+            },
+            */
+            _ => eprintln!("some csv type error"),
         }
+    }
+
+    for (id, client) in engine.client_list.iter() {
+        wtr.serialize(OutputRecord {
+            client: *id,
+            available: client.available,
+            held: client.held,
+            total: client.available,
+            locked: client.locked,
+        })?;
     }
 
     wtr.flush()?;
