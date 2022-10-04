@@ -289,20 +289,20 @@ pub struct Withdraw {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Dispute {
-    client_id: ClientId,
-    target_transaction_id: TransactionId,
+    pub client_id: ClientId,
+    pub target_transaction_id: TransactionId,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Resolve {
-    client_id: ClientId,
-    target_transaction_id: TransactionId,
+    pub client_id: ClientId,
+    pub target_transaction_id: TransactionId,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Chargeback {
-    client_id: ClientId,
-    target_transaction_id: TransactionId,
+    pub client_id: ClientId,
+    pub target_transaction_id: TransactionId,
 }
 
 #[cfg(test)]

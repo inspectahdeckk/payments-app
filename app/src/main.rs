@@ -7,7 +7,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::env;
-use std::error::Error as OtherError;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fs::File;
@@ -27,6 +26,8 @@ enum TransactionType {
     Deposit,
     #[serde(rename(deserialize = "withdrawal"))]
     Withdrawal,
+    #[serde(rename(deserialize = "dispute"))]
+    Dispute,
 }
 
 #[derive(Debug, Serialize)]
@@ -66,6 +67,14 @@ fn process_csv(engine: &mut PaymentsEngine, csv_path: OsString) -> Result<(), Bo
                 };
                 Transaction::Withdraw(withdraw)
             }
+
+            TransactionType::Dispute => {
+                let dispute = Dispute {
+                    client_id: record.client,
+                    target_transaction_id: record.tx,
+                };
+                Transaction::Dispute(dispute)
+            }
         };
 
         engine.recv_tx(transaction)?;
@@ -93,7 +102,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             client: *id,
             available: client.available,
             held: client.held,
-            total: client.available,
+            total: client.available.checked_add(client.held),
             locked: client.locked,
         })?;
     }
@@ -102,7 +111,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_first_arg() -> Result<OsString, Box<dyn OtherError>> {
+fn get_first_arg() -> Result<OsString, Box<dyn Error>> {
     match env::args_os().nth(1) {
         None => Err(From::from("expected 1 argument, but got none")),
         Some(file_path) => Ok(file_path),
