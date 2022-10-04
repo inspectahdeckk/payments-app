@@ -1,6 +1,7 @@
-[workspace]
+#
+# payments_app is comprised of two packages.  Consumers only need to know about
+# "app".  "app" depends on "payments_engine".
+#
 
-members = [
-   	"app",
-	"payments_engine",
-]
+[workspace]
+members = ["app", "payments_engine",]

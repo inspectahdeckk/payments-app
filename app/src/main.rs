@@ -2,30 +2,31 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-use payments_engine::Amount;
-use payments_engine::Client;
-use payments_engine::ClientId;
-use payments_engine::Deposit;
-use payments_engine::DisputeStatus;
-use payments_engine::Error;
-use payments_engine::PaymentsEngine;
-use payments_engine::Transaction;
-use payments_engine::TransactionId;
-use payments_engine::Withdraw;
+use payments_engine::*;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::env;
 use std::error::Error as OtherError;
+use std::error::Error;
 use std::ffi::OsString;
+use std::fs::File;
 use std::io;
 
 #[derive(Debug, Deserialize)]
 struct InputRecord {
-    r#type: String,
+    r#type: TransactionType,
     client: ClientId,
     tx: TransactionId,
     amount: Amount,
+}
+
+#[derive(Debug, Deserialize)]
+enum TransactionType {
+    #[serde(rename(deserialize = "deposit"))]
+    Deposit,
+    #[serde(rename(deserialize = "withdrawal"))]
+    Withdrawal,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,47 +38,54 @@ struct OutputRecord {
     locked: bool,
 }
 
-fn main() -> Result<(), Box<dyn OtherError>> {
-    let mut engine = PaymentsEngine {
-        client_list: HashMap::new(),
-    };
-
-    let file_path = get_first_arg()?;
-
+fn process_csv(engine: &mut PaymentsEngine, csv_path: OsString) -> Result<(), Box<dyn Error>> {
     let mut rdr = csv::ReaderBuilder::new()
         //.has_headers(false)
         .trim(csv::Trim::All)
-        .from_path(file_path)?;
-
-    let mut wtr = csv::WriterBuilder::new().from_writer(io::stdout());
+        .from_path(csv_path)?;
 
     for result in rdr.deserialize() {
         let record: InputRecord = result?;
 
-        match record.r#type.as_ref() {
-            "deposit" => {
+        let transaction = match record.r#type {
+            TransactionType::Deposit => {
                 let deposit = Deposit {
                     transaction_id: record.tx,
                     client_id: record.client,
                     amount: record.amount,
                     dispute_status: DisputeStatus::NotDisputed,
                 };
-                let deposit_transaction = Transaction::Deposit(deposit);
-                engine.recv_tx(deposit_transaction)?;
+                Transaction::Deposit(deposit)
             }
 
-            /*"withdraw" => {
+            TransactionType::Withdrawal => {
                 let withdraw = Withdraw {
                     transaction_id: record.tx,
                     client_id: record.client,
                     amount: record.amount,
                 };
-                let withdraw_transaction = Transaction::Withdraw(withdraw);
-                engine.recv_tx(withdraw_transaction)?;
-            },
-            */
-            _ => eprintln!("some csv type error"),
-        }
+                Transaction::Withdraw(withdraw)
+            }
+        };
+
+        engine.recv_tx(transaction)?;
+    }
+
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut engine = PaymentsEngine {
+        client_list: HashMap::new(),
+    };
+
+    let csv_path = get_first_arg()?;
+
+    let mut wtr = csv::WriterBuilder::new().from_writer(io::stdout());
+
+    match process_csv(&mut engine, csv_path) {
+        Err(err) => eprintln!("{:?}", err),
+        Ok(()) => (),
     }
 
     for (id, client) in engine.client_list.iter() {
