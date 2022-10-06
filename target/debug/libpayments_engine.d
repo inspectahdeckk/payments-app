@@ -1,1 +1,1 @@
-/home/mateo/Desktop/projects/payments_app/target/debug/libpayments_engine.rlib: /home/mateo/Desktop/projects/payments_app/payments_engine/src/lib.rs
+/home/mateo/Desktop/projects/payments-app/target/debug/libpayments_engine.rlib: /home/mateo/Desktop/projects/payments-app/payments_engine/src/lib.rs
